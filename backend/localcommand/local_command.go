@@ -1,13 +1,14 @@
 package localcommand
 
 import (
-	"os"
-	"os/exec"
+	//"os"
+	//"os/exec"
 	"syscall"
 	"time"
-	"unsafe"
+  "fmt"
+	//"unsafe"
 
-	"github.com/kr/pty"
+  "github.com/iamacarpet/go-winpty"
 	"github.com/pkg/errors"
 )
 
@@ -23,15 +24,26 @@ type LocalCommand struct {
 	closeSignal  syscall.Signal
 	closeTimeout time.Duration
 
-	cmd       *exec.Cmd
-	pty       *os.File
+	//cmd       *exec.Cmd
+	// pty       *os.File
+  pty       *winpty.WinPTY
 	ptyClosed chan struct{}
 }
 
 func New(command string, argv []string, options ...Option) (*LocalCommand, error) {
-	cmd := exec.Command(command, argv...)
+	//cmd := exec.Command(command, argv...)
 
-	pty, err := pty.Start(cmd)
+	// pty, err := pty.Start(cmd)
+  fmt.Printf("new command %s" , command)
+  fmt.Println("\n")
+  new_command := command
+  for i := 0; i < len(argv); i++ { // looping from 0 to the length of the array
+        fmt.Printf("%d th element of a is %s\n", i, argv[i])
+        new_command = new_command + " " + argv[i]
+  }
+  
+  pty, err := winpty.Open("", new_command)
+  fmt.Printf("full command list %s" , new_command)
 	if err != nil {
 		// todo close cmd?
 		return nil, errors.Wrapf(err, "failed to start command `%s`", command)
@@ -45,7 +57,7 @@ func New(command string, argv []string, options ...Option) (*LocalCommand, error
 		closeSignal:  DefaultCloseSignal,
 		closeTimeout: DefaultCloseTimeout,
 
-		cmd:       cmd,
+		//cmd:       cmd,
 		pty:       pty,
 		ptyClosed: ptyClosed,
 	}
@@ -56,28 +68,32 @@ func New(command string, argv []string, options ...Option) (*LocalCommand, error
 
 	// When the process is closed by the user,
 	// close pty so that Read() on the pty breaks with an EOF.
-	go func() {
+	/*go func() {
 		defer func() {
 			lcmd.pty.Close()
 			close(lcmd.ptyClosed)
 		}()
 
-		lcmd.cmd.Wait()
-	}()
+		//lcmd.cmd.Wait()
+	}()*/
 
 	return lcmd, nil
 }
 
 func (lcmd *LocalCommand) Read(p []byte) (n int, err error) {
-	return lcmd.pty.Read(p)
+	//return lcmd.pty.Read(p)
+  return lcmd.pty.StdOut.Read(p)
 }
 
 func (lcmd *LocalCommand) Write(p []byte) (n int, err error) {
-	return lcmd.pty.Write(p)
+	//return lcmd.pty.Write(p)
+  return lcmd.pty.StdIn.Write(p)
 }
 
 func (lcmd *LocalCommand) Close() error {
-	if lcmd.cmd != nil && lcmd.cmd.Process != nil {
+  lcmd.pty.Close()
+  return nil
+	/*if lcmd.cmd != nil && lcmd.cmd.Process != nil {
 		lcmd.cmd.Process.Signal(lcmd.closeSignal)
 	}
 	for {
@@ -87,19 +103,19 @@ func (lcmd *LocalCommand) Close() error {
 		case <-lcmd.closeTimeoutC():
 			lcmd.cmd.Process.Signal(syscall.SIGKILL)
 		}
-	}
+	}*/
 }
 
 func (lcmd *LocalCommand) WindowTitleVariables() map[string]interface{} {
 	return map[string]interface{}{
 		"command": lcmd.command,
 		"argv":    lcmd.argv,
-		"pid":     lcmd.cmd.Process.Pid,
+		"pid":     "-1", //lcmd.cmd.Process.Pid,
 	}
 }
 
 func (lcmd *LocalCommand) ResizeTerminal(width int, height int) error {
-	window := struct {
+	/*window := struct {
 		row uint16
 		col uint16
 		x   uint16
@@ -120,7 +136,9 @@ func (lcmd *LocalCommand) ResizeTerminal(width int, height int) error {
 		return errno
 	} else {
 		return nil
-	}
+	}*/
+  lcmd.pty.SetSize(uint32(width), uint32(height))
+  return nil
 }
 
 func (lcmd *LocalCommand) closeTimeoutC() <-chan time.Time {
